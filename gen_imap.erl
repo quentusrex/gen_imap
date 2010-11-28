@@ -47,6 +47,7 @@ connection_distributor(Server, Socket) ->
 command_handler(Port) ->
     command_handler(Port, 10000);
 command_handler(Port, Timeout) ->
+    gen_tcp:send(Port, "* OK gen_imap server ready\n"),
     case gen_tcp:recv(Port, 0, Timeout) of
 	{ok, Packet} ->
 	    [Ident | Commands] = string:tokens(Packet, " "),
@@ -59,7 +60,8 @@ command_handler(Port, Timeout) ->
 	    io:format("Client closed the connection. ~n", []);
 	Reason ->
 	    io:format("Unable to recv from socket because: ~p~n", [Reason])
-    end.
+    end,
+    gen_tcp:send(Port, "* BYE gen_imap server closing connection\n").
 
 run_command("CAPABILITY", Port, Timeout, Ident, Args) ->
     gen_tcp:send(Port, "CAPABILITY NOOP IDLE\n"),
