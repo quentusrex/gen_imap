@@ -1,5 +1,5 @@
 -module(gen_imap).
-
+-author("William King <quentusrex@gmail.com>").
 -export([init/0, init/1, loop0/1, loop0/2, loop/1, connection_distributor/2, command_handler/2, run_command/4]).
 
 -define(PORTNO, 143).
