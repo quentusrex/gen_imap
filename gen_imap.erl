@@ -69,6 +69,7 @@ run_command("IDLE", Port, Timeout, Ident, Args) ->
 run_command("NOOP", Port, Timeout, Ident, Args) ->
     command_handler(Port, Timeout);
 run_command("LOGOUT", Port, Timeout, Ident, Args) ->
+    gen_tcp:send(Port,  Ident ++ " OK LOGOUT completed"),
     {ok, closed};
 run_command(Command, Port, Timeout, Ident, Args) ->
     gen_tcp:send(Port, "BAD parse error: " ++ Command ++ "command not implemented\n").
