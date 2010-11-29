@@ -2,6 +2,9 @@
 -author("William King <quentusrex@gmail.com>").
 -export([init/0, init/1, loop0/1, loop0/2, loop/1, connection_distributor/2, command_handler/2, run_command/4]).
 
+-record(imap_connection, {port,
+			 state="Not Authenticated",
+			 timeout=10000).
 -define(PORTNO, 143).
 
 %% Initialize the IMAP daemon with default port
@@ -35,7 +38,9 @@ connection_distributor(Server, Socket) ->
 	    Pid = self(),
 	    io:format("Client opened a connection. ~n", []),
 	    Server ! next_worker, %% If we get a connection, spawn off a new worker while we handle this one.
-	    command_handler(Port);
+	    gen_tcp:send(Port, "* OK gen_imap server ready\n"),
+	    command_handler(Port),
+	    gen_tcp:send(Port, "* BYE gen_imap server closing connection\n");
 	Reason ->
 	    Server ! next_worker,
 	    io:format("Unable to accept socket because: ~p~n", [Reason])
@@ -44,34 +49,36 @@ connection_distributor(Server, Socket) ->
 %% Will stay with the connection for the life of the connection. 
 %% Has a default timeout of 10 seconds which will close the connection if there is no activity.
 %% Timeout can be set to 0 on the call, this will be required to support IDLE command, for fake push notification.
-command_handler(Port) ->
-    command_handler(Port, 10000);
-command_handler(Port, Timeout) ->
-    gen_tcp:send(Port, "* OK gen_imap server ready\n"),
-    case gen_tcp:recv(Port, 0, Timeout) of
+command_handler(State) when is_record(State, imap_connection) ->
+    case gen_tcp:recv(State#imap_connection.port, 0, State#imap_connection.port) of
 	{ok, Packet} ->
 	    [Ident | Commands] = string:tokens(Packet, " "),
 	    [Command | Args ] = Commands,
-	    io:format("Got packet: ~p~n", [Packet]),
-	    io:format("Port: ~p Ident: ~p Command: ~p Args: ~p~n", [Port, Ident, Command, Args]),
-	    run_command(string:to_upper(Command), Port, Timeout, Ident, Args),
-	    command_handler(Port);
+	    %% Should really spawn a run_command so that heavy commands do not slow down the command input.
+	    run_command(string:to_upper(Command), State, Ident, Args),
+	    command_handler(State);
 	{error, closed} ->
 	    io:format("Client closed the connection. ~n", []);
 	Reason ->
 	    io:format("Unable to recv from socket because: ~p~n", [Reason])
-    end,
-    gen_tcp:send(Port, "* BYE gen_imap server closing connection\n").
+    end;
+command_handler(Port) ->
+    command_handler(Port, 10000);
+command_handler(Port, Timeout) ->
+    State = #imap_connection{port=Port, timeout=Timeout},
+    command_handler(State).
 
-run_command("CAPABILITY", Port, Timeout, Ident, Args) ->
-    gen_tcp:send(Port, "CAPABILITY NOOP IDLE\n"),
-    gen_tcp:send(Port, Ident ++ " OK CAPABILITY completed\n";
-run_command("IDLE", Port, Timeout, Ident, Args) ->
-    command_handler(Port, 0);
-run_command("NOOP", Port, Timeout, Ident, Args) ->
-    command_handler(Port, Timeout);
-run_command("LOGOUT", Port, Timeout, Ident, Args) ->
+run_command("CAPABILITY", State, Ident, Args) ->
+    gen_tcp:send(State#imap_connection.port, "* CAPABILITY NOOP LOGOUT IDLE\n"),
+    gen_tcp:send(State#imap_connection.port, Ident ++ " OK CAPABILITY completed\n";
+run_command("IDLE", State, Ident, Args) ->
+    State#imap_connection.timeout=0,
+    command_handler(State);
+run_command("NOOP", State, Ident, Args) ->
+    command_handler(State);
+run_command("LOGOUT", State, Ident, Args) ->
+    State#imap_connection.state="Not Authenticated",
     gen_tcp:send(Port,  Ident ++ " OK LOGOUT completed"),
     {ok, closed};
-run_command(Command, Port, Timeout, Ident, Args) ->
+run_command(Command, State, Ident, Args) ->
     gen_tcp:send(Port, "BAD parse error: " ++ Command ++ "command not implemented\n").
