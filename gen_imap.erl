@@ -60,13 +60,15 @@ command_handler(Port, Timeout) ->
 command_handler(State) when is_record(State, imap_connection) ->
     case gen_tcp:recv(State#imap_connection.port, 0, State#imap_connection.timeout) of
 	{ok, Packet} ->
-	    [Ident | Commands] = string:tokens(Packet, " "),
-	    [Command | Args ] = Commands,
+	    [Input| _] = string:tokens(Packet, "\r\n"),
+	    [Ident, Command |Args] = string:tokens(Input, " "),
 	    %% Should really spawn a run_command so that heavy commands do not slow down the command input.
 	    run_command(string:to_upper(Command), State, Ident, Args),
 	    command_handler(State);
 	{error, closed} ->
 	    io:format("Client closed the connection. ~n", []);
+	{error, timeout} ->
+	    io:format("Client timed out. ~n", []);
 	Reason ->
 	    io:format("Unable to recv from socket because: ~p~n", [Reason])
     end;
