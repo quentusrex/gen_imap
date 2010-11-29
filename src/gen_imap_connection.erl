@@ -1,38 +1,11 @@
--module(gen_imap).
+-module(gen_imap_connection).
 -author("William King <quentusrex@gmail.com>").
--export([init/0, init/1, loop/1, connection_distributor/2, command_handler/1, command_handler/2, run_command/4]).
+-export([connection_distributor/2, command_handler/1, command_handler/2, run_command/4]).
 
 -record(imap_connection, {port,
 			 state="Not Authenticated",
 			 timeout=10000}).
--define(PORTNO, 143).
 
-%% Initialize the IMAP daemon with default port
-init() ->
-    init(?PORTNO).
-
-%% Initialize the IMAP daemon with specified port
-init(Port) ->
-    case gen_tcp:listen(Port, [{active, false}]) of
-	{ok, Socket} ->
-	    Pid = spawn_link(?MODULE, loop, [Socket]),
-	    Pid ! next_worker;
-	Reason ->
-	    io:format("Failed to initialize because: ~p~n", [Reason])
-    end.
-
-%% Main loop. will spawn worker processes to handle new incoming connections when 
-%% it receives a message from a worker process that a new connection was established. 
-loop(Socket) ->
-    receive
-	next_worker ->
-	    spawn_link(?MODULE, connection_distributor, [self(), Socket]);
-	{ok, _} ->
-	    ok;
-	Reason ->
-	    io:format("Error: ~p~n", [Reason])
-    end,
-    loop(Socket).
 
 %% Distributor blocks on the accept waiting for new connections. 
 %% If it gets a new connection it will tell the main loop to spawn a process to 
